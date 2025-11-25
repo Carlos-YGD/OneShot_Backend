@@ -17,7 +17,10 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path
+from tasks.views import health, hello_world
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-]
+    path("api/health/", health),
+    path("api/hello/", hello_world),
+    ]
