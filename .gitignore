@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+.env/
+
+# Django stuff
+*.sqlite3
+/staticfiles/
+/media/
+
+# Logs
+*.log
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Byte-compiled
+*.egg-info/
+
+# Docker
+*.pid
+*.db
+*.tar
