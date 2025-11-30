@@ -16,11 +16,12 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path
-from tasks.views import health, hello_world
+from django.urls import path, include
+
+from tasks.views import health
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", health),
-    path("api/hello/", hello_world),
-    ]
+    path("api/users/", include("users.urls")),
+]
