@@ -7,7 +7,7 @@ from .models import User, UserStats
 class UserStatsSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserStats
-        fields = "__all__"
+        exclude = ("user",)
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -51,5 +51,39 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "username", "is_active", "created_at", "stats"]
+        fields = ["id", "email", "username", "created_at", "stats"]
+
+
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["username"]
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    stats = UserStatsSerializer(source="userstats")
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "username",
+            "is_active",
+            "is_admin",
+            "is_staff",
+            "stats",
+        ]
         read_only_fields = ("id", "created_at")
+
+    def update(self, instance, validated_data):
+        stats_data = validated_data.pop("userstats", None)
+        instance = super().update(instance, validated_data)
+
+        if stats_data:
+            stats = instance.userstats
+            for field, value in stats_data.items():
+                setattr(stats, field, value)
+            stats.save()
+
+        return instance
