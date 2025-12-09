@@ -15,20 +15,26 @@ class UserAdmin(BaseUserAdmin):
     search_fields = ("email", "username")
     ordering = ("email",)
 
-    readonly_fields = ("created_at", "last_login_at")
+    readonly_fields = ("created_at", "last_login")
 
     fieldsets = (
         (None, {"fields": ("email", "username", "password")}),
-        ("Permissions", {"fields": ("is_admin", "is_staff", "is_active", "is_superuser")}),
-        ("Important Dates", {"fields": ("last_login_at", "created_at")}),
+        (
+            "Permissions",
+            {"fields": ("is_admin", "is_staff", "is_active", "is_superuser")},
+        ),
+        ("Important Dates", {"fields": ("last_login", "created_at")}),
         ("Security", {"fields": ("failed_logins", "locked_until")}),
     )
 
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("email", "username", "password1", "password2")
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("email", "username", "password1", "password2"),
+            },
+        ),
     )
 
     inlines = (UserStatsInline,)
@@ -50,25 +56,31 @@ class UserStatsAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ("User", {"fields": ("user",)}),
-        ("Versus Mode Stats", {
-            "fields": (
-                "p1_wins", "p1_losses",
-                "p2_wins", "p2_losses",
-                "draws",
-                "versus_games_played",
-            )
-        }),
-        ("Arcade Mode Stats", {
-            "fields": (
-                "arcade_kills",
-                "arcade_losses",
-                "arcade_victories",
-                "arcade_games_played",
-            )
-        }),
-        ("Global Stats", {
-            "fields": ("total_games_played", "updated_at")
-        }),
+        (
+            "Versus Mode Stats",
+            {
+                "fields": (
+                    "p1_wins",
+                    "p1_losses",
+                    "p2_wins",
+                    "p2_losses",
+                    "draws",
+                    "versus_games_played",
+                )
+            },
+        ),
+        (
+            "Arcade Mode Stats",
+            {
+                "fields": (
+                    "arcade_kills",
+                    "arcade_losses",
+                    "arcade_victories",
+                    "arcade_games_played",
+                )
+            },
+        ),
+        ("Global Stats", {"fields": ("total_games_played", "updated_at")}),
     )
 
 

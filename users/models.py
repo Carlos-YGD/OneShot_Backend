@@ -1,5 +1,19 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
+from django.core.validators import RegexValidator, EmailValidator
+
+username_validator = RegexValidator(
+    regex=r'^[a-zA-Z0-9_]{3,30}$',
+    message='Username must be 3-30 characters long and can only contain letters, numbers, and underscores.'
+)
+
+email_validator = EmailValidator(
+    message='Enter a valid email address.'
+)
 
 
 class UserManager(BaseUserManager):
@@ -12,6 +26,7 @@ class UserManager(BaseUserManager):
             user.set_password(password)
         else:
             user.set_unusable_password()
+        user.full_clean()
         user.save(using=self._db)
         return user
 
@@ -23,14 +38,17 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    email = models.EmailField(unique=True)
-    username = models.CharField(max_length=255, unique=True)
+    email = models.EmailField(max_length=255,
+                              unique=True,
+                              validators=[email_validator])
+    username = models.CharField(max_length=50,
+                                unique=True,
+                                validators=[username_validator])
     is_admin = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
-    last_login_at = models.DateTimeField(null=True, blank=True)
     failed_logins = models.IntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
 

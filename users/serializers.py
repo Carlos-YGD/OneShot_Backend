@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from .models import User, UserStats
+from .models import User, UserStats, username_validator, email_validator
 
 
 class UserStatsSerializer(serializers.ModelSerializer):
@@ -12,10 +12,10 @@ class UserStatsSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
-        write_only=True,
-        required=True,
-        style={"input_type": "password"}
+        write_only=True, required=True, style={"input_type": "password"}
     )
+    username = serializers.CharField(validators=[username_validator])
+    email = serializers.EmailField(validators=[email_validator])
 
     class Meta:
         model = User
@@ -29,21 +29,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         return password
 
     def create(self, validated_data):
-        user = User(
-            email=validated_data["email"],
-            username=validated_data["username"]
-        )
+        user = User(email=validated_data["email"], username=validated_data["username"])
         user.set_password(validated_data["password"])
+        user.full_clean()
         user.save()
         return user
 
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    password = serializers.CharField(
-        write_only=True,
-        style={"input_type": "password"}
-    )
+    password = serializers.CharField(write_only=True, style={"input_type": "password"})
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -55,6 +50,8 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(validators=[username_validator])
+
     class Meta:
         model = User
         fields = ["username"]

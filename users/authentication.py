@@ -27,4 +27,3 @@ class CookieJWTAuthentication(JWTAuthentication):
             raise AuthenticationFailed("Account disabled")
 
         return (user, validated_token)
-
