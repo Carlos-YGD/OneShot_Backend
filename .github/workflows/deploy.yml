@@ -1,0 +1,45 @@
+name: Deploy Django Backend to Elastic Beanstalk
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.5"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::127996280655:role/OneShot
+          aws-region: us-east-2
+
+      - name: Package app
+        run: zip -r app.zip . -x "**/.git/*" "**/.github/*" "**/venv/*"
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          VERSION="v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          aws elasticbeanstalk create-application-version \
+            --application-name OneShot \
+            --version-label $VERSION \
+            --source-bundle S3Bucket="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)",S3Key=$VERSION.zip
+          aws elasticbeanstalk update-environment \
+            --environment-name OneShot-env \
+            --version-label $VERSION
