@@ -13,8 +13,28 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 from datetime import timedelta
+import json
+import boto3
+from botocore.exceptions import ClientError
 
 from dotenv import load_dotenv
+
+
+def get_secret(secret_name, region_name="us-east-2"):
+    client = boto3.client('secretsmanager', region_name=region_name)
+
+    try:
+        get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+    except ClientError as e:
+        raise e
+
+    secret = get_secret_value_response['SecretString']
+    return json.loads(secret)
+
+
+# Fetch the secret
+secrets = get_secret("myapp/database")
+
 
 # Load .env file
 load_dotenv()
