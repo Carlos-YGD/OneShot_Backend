@@ -30,18 +30,19 @@ jobs:
           role-to-assume: arn:aws:iam::127996280655:role/OneShot
           aws-region: us-east-2
 
+      - name: Set deployment version
+        run: echo "VERSION=v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_ENV
+
       - name: Package app
         run: zip -r app.zip . -x "**/.git/*" "**/.github/*" "**/venv/*"
 
-      - name: Upload app to Elastic Beanstalk S3 bucket
+      - name: Upload app to S3
         run: |
-          VERSION="v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
           EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
           aws s3 cp app.zip s3://$EB_BUCKET/$VERSION.zip
 
       - name: Deploy to Elastic Beanstalk
         run: |
-          VERSION="v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
           EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
           aws elasticbeanstalk create-application-version \
             --application-name OneShot \
