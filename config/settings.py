@@ -33,7 +33,7 @@ def get_secret(secret_name, region_name="us-east-2"):
 
 
 # Fetch the secret
-secrets = get_secret("myapp/database")
+secrets = get_secret("oneshot_secret")
 
 
 # Load .env file
