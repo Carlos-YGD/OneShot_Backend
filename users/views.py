@@ -1,13 +1,16 @@
-from rest_framework import generics, status
+from rest_framework import generics, status, filters
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.reverse import reverse
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from django_filters.rest_framework import DjangoFilterBackend
+from .authentication import CookieJWTAuthentication
 
 from .models import User
 from .serializers import (
@@ -30,9 +33,15 @@ class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAdminUser]
 
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_admin", "is_staff", "is_active"]
+    search_fields = ["id", "username", "email"]
+    ordering_fields = ["id", "username", "email"]
+    ordering = ["id"]
+
     @swagger_auto_schema(
         operation_summary="List all users",
-        operation_description="Returns a list of all users. **Admin-only** endpoint.",
+        operation_description="Returns a paginated list of all users. **Admin-only** endpoint.",
         tags=["Users"],
         responses={200: UserSerializer(many=True)},
     )
@@ -92,9 +101,33 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().delete(request, *args, **kwargs)
 
 
+class AdminCheckView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Check admin and staff status",
+        operation_description="Returns the admin and staff status of the authenticated user.",
+        responses={200: openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "is_admin": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                "is_staff": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+            }
+        )},
+        tags=["Users"],
+    )
+    def get(self, request):
+        user = request.user
+        return Response({
+            "is_admin": user.is_admin,
+            "is_staff": user.is_staff,
+        })
+
+
 class ProfileView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
+    authentication_classes = [CookieJWTAuthentication]
 
     def get_object(self):
         return self.request.user
@@ -235,8 +268,6 @@ class LoginView(generics.GenericAPIView):
         response = Response(
             {
                 "user": UserSerializer(user_auth).data,
-                "refresh": refresh_token,
-                "access": access_token,
             },
             status=200,
         )
@@ -247,23 +278,27 @@ class LoginView(generics.GenericAPIView):
             value=access_token,
             httponly=True,
             max_age=cookie_max_age,
-            samesite="Lax",
+            samesite="None",
+            secure=True,
         )
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
             httponly=True,
             max_age=7 * 24 * 3600,
-            samesite="Lax",
+            samesite="None",
+            secure=True,
         )
 
+        print(request.COOKIES)
+        print(response.cookies)
         return response
 
 
 @swagger_auto_schema(
     method="post",
     operation_summary="Logout",
-    operation_description="Logs out the user by deleting JWT cookies.",
+    operation_description="Logs out the user by invalidating the refresh token and deleting JWT cookies.",
     responses={
         200: openapi.Schema(
             type=openapi.TYPE_OBJECT,
@@ -275,9 +310,20 @@ class LoginView(generics.GenericAPIView):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
+    refresh_token = request.COOKIES.get("refresh_token")
+
+    if refresh_token:
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except Exception:
+            pass
+
     response = Response({"detail": "Successfully logged out."}, status=200)
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
+
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+
     return response
 
 
@@ -308,6 +354,44 @@ class UserStatsResetView(APIView):
                 setattr(user_stats, field.name, 0)
         user_stats.save()
         return Response({"detail": "Your stats have been reset."}, status=status.HTTP_200_OK)
+
+
+class UserStatsUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user_stats = request.user.userstats
+        data = request.data
+
+        # Expected keys: winner, p1Lives, p2Lives
+        winner = data.get("winner")
+
+        # Update Versus stats
+        if winner == "Player 1":
+            user_stats.p1_wins += 1
+            user_stats.p2_losses += 1
+        elif winner == "Player 2":
+            user_stats.p2_wins += 1
+            user_stats.p1_losses += 1
+        else:
+            user_stats.draws += 1
+
+        user_stats.versus_games_played += 1
+        user_stats.total_games_played += 1
+        user_stats.save()
+
+        return Response(
+            {"success": True, "stats": {
+                "p1_wins": user_stats.p1_wins,
+                "p1_losses": user_stats.p1_losses,
+                "p2_wins": user_stats.p2_wins,
+                "p2_losses": user_stats.p2_losses,
+                "draws": user_stats.draws,
+                "versus_games_played": user_stats.versus_games_played,
+                "total_games_played": user_stats.total_games_played
+            }},
+            status=status.HTTP_200_OK
+        )
 
 
 @swagger_auto_schema(
@@ -345,6 +429,7 @@ def api_root(request):
             "profile": reverse("profile", request=request),
             "profile-edit": reverse("profile-edit", request=request),
             "user-stats": reverse("user-stats", request=request),
+            "admin-check": reverse("admin-check", request=request),
             "user-stats-reset": reverse("user-stats-reset", request=request),
             "register": reverse("register", request=request),
             "login": reverse("login", request=request),
@@ -352,3 +437,35 @@ def api_root(request):
             "delete_account": reverse("delete-own-account", request=request),
         }
     )
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_summary="Refresh access token",
+    operation_description="Uses refresh_token cookie to issue a new access token.",
+    responses={200: openapi.Schema(type=openapi.TYPE_OBJECT, properties={"access": openapi.Schema(type=openapi.TYPE_STRING)})},
+    tags=["Authentication"],
+)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def refresh_access_token(request):
+    refresh_token = request.COOKIES.get("refresh_token")
+    if not refresh_token:
+        return Response({"detail": "No refresh token"}, status=401)
+
+    try:
+        token = RefreshToken(refresh_token)
+        access_token = str(token.access_token)
+
+        response = Response({"access": access_token})
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            max_age=3600,
+            samesite="Lax",
+        )
+        return response
+
+    except TokenError:
+        return Response({"detail": "Invalid refresh token"}, status=401)

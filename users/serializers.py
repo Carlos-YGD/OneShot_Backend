@@ -42,11 +42,11 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    stats = UserStatsSerializer(read_only=True)
+    stats = UserStatsSerializer(source="userstats", read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "email", "username", "created_at", "stats"]
+        fields = ["id", "email", "username", "created_at", "is_admin", "is_staff", "is_active", "stats"]
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
