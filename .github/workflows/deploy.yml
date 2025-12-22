@@ -33,13 +33,20 @@ jobs:
       - name: Package app
         run: zip -r app.zip . -x "**/.git/*" "**/.github/*" "**/venv/*"
 
+      - name: Upload app to Elastic Beanstalk S3 bucket
+        run: |
+          VERSION="v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
+          aws s3 cp app.zip s3://$EB_BUCKET/$VERSION.zip
+
       - name: Deploy to Elastic Beanstalk
         run: |
           VERSION="v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
           aws elasticbeanstalk create-application-version \
             --application-name OneShot \
             --version-label $VERSION \
-            --source-bundle S3Bucket="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)",S3Key=$VERSION.zip
+            --source-bundle S3Bucket=$EB_BUCKET,S3Key=$VERSION.zip
           aws elasticbeanstalk update-environment \
             --environment-name OneShot-env \
             --version-label $VERSION
