@@ -24,17 +24,31 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::127996280655:role/OneShot
-          aws-region: us-east-2
+      # --- Generate EB environment config with secrets ---
+      - name: Generate EB environment config
+        run: |
+          mkdir -p .ebextensions
+          cat <<EOL > .ebextensions/env.config
+          option_settings:
+            aws:elasticbeanstalk:application:environment:
+              DB_NAME: ${{ secrets.DB_NAME }}
+              DB_USER: ${{ secrets.DB_USER }}
+              DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+              DB_HOST: ${{ secrets.DB_HOST }}
+              DB_PORT: ${{ secrets.DB_PORT }}
+          EOL
 
       - name: Set deployment version
         run: echo "VERSION=v-$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_ENV
 
       - name: Package app
         run: zip -r app.zip . -x "**/.git/*" "**/.github/*" "**/venv/*"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::127996280655:role/OneShot
+          aws-region: us-east-2
 
       - name: Upload app to S3
         run: |
@@ -60,14 +74,8 @@ jobs:
           done
           echo "Environment is ready!"
 
-      - name: Deploy to Elastic Beanstalk with environment variables
+      - name: Deploy to Elastic Beanstalk
         run: |
           aws elasticbeanstalk update-environment \
             --environment-name OneShot-env \
-            --version-label $VERSION \
-            --option-settings \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_NAME,Value=${{ secrets.DB_NAME }} \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_USER,Value=${{ secrets.DB_USER }} \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_PASSWORD,Value=${{ secrets.DB_PASSWORD }} \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_HOST,Value=${{ secrets.DB_HOST }} \
-              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_PORT,Value=${{ secrets.DB_PORT }}
+            --version-label $VERSION
