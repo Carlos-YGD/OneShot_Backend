@@ -44,10 +44,24 @@ jobs:
       - name: Deploy to Elastic Beanstalk
         run: |
           EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
+
+          # Create a new application version
           aws elasticbeanstalk create-application-version \
             --application-name OneShot \
             --version-label $VERSION \
             --source-bundle S3Bucket=$EB_BUCKET,S3Key=$VERSION.zip
+
+          # Update environment variables from GitHub secrets
+          aws elasticbeanstalk update-environment \
+            --environment-name OneShot-env \
+            --option-settings \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_NAME,Value=${{ secrets.DB_NAME }} \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_USER,Value=${{ secrets.DB_USER }} \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_PASSWORD,Value=${{ secrets.DB_PASSWORD }} \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_HOST,Value=${{ secrets.DB_HOST }} \
+              Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_PORT,Value=${{ secrets.DB_PORT }}
+
+          # Deploy the new version
           aws elasticbeanstalk update-environment \
             --environment-name OneShot-env \
             --version-label $VERSION
