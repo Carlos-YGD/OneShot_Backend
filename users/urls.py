@@ -12,7 +12,8 @@ from .views import (
     UserStatsResetView,
     refresh_access_token,
     AdminCheckView,
-    UserStatsUpdateView
+    UserStatsUpdateView,
+    health_check
 )
 
 urlpatterns = [
@@ -29,4 +30,5 @@ urlpatterns = [
     path("logout/", logout_view, name="logout"),
     path("delete/", delete_own_account, name="delete-own-account"),
     path("refresh/", refresh_access_token, name="token_refresh"),
+    path("health/", health_check),
 ]

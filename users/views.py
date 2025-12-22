@@ -23,9 +23,14 @@ from .serializers import (
 )
 from django.utils import timezone
 from datetime import timedelta
+from django.http import JsonResponse
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_TIME = timedelta(minutes=15)
+
+
+def health_check(request):
+    return JsonResponse({"status": "ok"})
 
 
 class UserListView(generics.ListAPIView):
