@@ -41,27 +41,33 @@ jobs:
           EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
           aws s3 cp app.zip s3://$EB_BUCKET/$VERSION.zip
 
-      - name: Deploy to Elastic Beanstalk
+      - name: Create application version
         run: |
           EB_BUCKET="elasticbeanstalk-us-east-2-$(aws sts get-caller-identity --query Account --output text)"
-
-          # Create a new application version
           aws elasticbeanstalk create-application-version \
             --application-name OneShot \
             --version-label $VERSION \
             --source-bundle S3Bucket=$EB_BUCKET,S3Key=$VERSION.zip
 
-          # Update environment variables from GitHub secrets
+      - name: Wait for environment to be ready
+        run: |
+          echo "Waiting for Elastic Beanstalk environment to be ready..."
+          until aws elasticbeanstalk describe-environments \
+            --environment-names OneShot-env \
+            --query "Environments[0].Status" --output text | grep -q "Ready"; do
+              echo "Not ready yet, sleeping 15s..."
+              sleep 15
+          done
+          echo "Environment is ready!"
+
+      - name: Deploy to Elastic Beanstalk with environment variables
+        run: |
           aws elasticbeanstalk update-environment \
             --environment-name OneShot-env \
+            --version-label $VERSION \
             --option-settings \
               Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_NAME,Value=${{ secrets.DB_NAME }} \
               Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_USER,Value=${{ secrets.DB_USER }} \
               Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_PASSWORD,Value=${{ secrets.DB_PASSWORD }} \
               Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_HOST,Value=${{ secrets.DB_HOST }} \
               Namespace=aws:elasticbeanstalk:application:environment,OptionName=DB_PORT,Value=${{ secrets.DB_PORT }}
-
-          # Deploy the new version
-          aws elasticbeanstalk update-environment \
-            --environment-name OneShot-env \
-            --version-label $VERSION
