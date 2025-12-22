@@ -84,6 +84,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://one-shot-frontend.vercel.app",
 ]
 
 # Allow ALL Vercel preview + production domains
@@ -94,7 +95,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://*.vercel.app",
+    "https://one-shot-frontend.vercel.app",
 ]
 
 # Cookies required for cross-domain auth (Vercel → EB)
