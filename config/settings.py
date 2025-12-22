@@ -20,9 +20,11 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "unsafe-default-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = [
-    ".elasticbeanstalk.com",
     "1oneshot.us-east-2.elasticbeanstalk.com",
+    ".elasticbeanstalk.com",
+    ".amazonaws.com",
 ]
+
 
 # ------------------------------------------------------------------------------
 # Application definition
