@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /va
 COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install gunicorn
 # Copy project files
 COPY . .
 # Set environment variables (Python won’t write .pyc files, stdout logs go directly to console)
