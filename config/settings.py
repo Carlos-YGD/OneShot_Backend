@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 # Load .env file
 load_dotenv()
 
+APPEND_SLASH=True
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "unsafe-default-key")
