@@ -67,7 +67,7 @@ jobs:
         run: |
           echo "Waiting for Elastic Beanstalk environment to be ready..."
           until aws elasticbeanstalk describe-environments \
-            --environment-names OS-ENV \
+            --environment-names OneShot-env-2  \
             --query "Environments[0].Status" --output text | grep -q "Ready"; do
               echo "Not ready yet, sleeping 15s..."
               sleep 15
@@ -77,5 +77,5 @@ jobs:
       - name: Deploy to Elastic Beanstalk
         run: |
           aws elasticbeanstalk update-environment \
-            --environment-name OS-ENV \
+            --environment-name OneShot-env-2  \
             --version-label $VERSION

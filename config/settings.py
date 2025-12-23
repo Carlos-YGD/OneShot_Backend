@@ -23,6 +23,7 @@ ALLOWED_HOSTS = [
     "1oneshot.us-east-2.elasticbeanstalk.com",
     ".elasticbeanstalk.com",
     ".amazonaws.com",
+    ".cloudfront.net",
 ]
 
 
