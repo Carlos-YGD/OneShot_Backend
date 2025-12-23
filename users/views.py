@@ -5,15 +5,12 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.reverse import reverse
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
-from django.utils import timezone
-from datetime import timedelta
-from django.http import JsonResponse
+from .authentication import CookieJWTAuthentication
 
 from .models import User
 from .serializers import (
@@ -24,14 +21,18 @@ from .serializers import (
     AdminUserSerializer,
     UserProfileUpdateSerializer,
 )
+from django.utils import timezone
+from datetime import timedelta
+from django.http import JsonResponse
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_TIME = timedelta(minutes=15)
 
-
 def health_check(request):
     return JsonResponse({"status": "ok"})
 
+
+# -------------------- Users -------------------- #
 
 class UserListView(generics.ListAPIView):
     queryset = User.objects.all()
@@ -132,7 +133,7 @@ class AdminCheckView(APIView):
 class ProfileView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [CookieJWTAuthentication]
 
     def get_object(self):
         return self.request.user
@@ -167,6 +168,8 @@ class ProfileEditView(generics.UpdateAPIView):
         return super().partial_update(request, *args, **kwargs)
 
 
+# -------------------- Authentication -------------------- #
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
@@ -174,7 +177,7 @@ class RegisterView(generics.CreateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Register a new user",
-        operation_description="Creates a new user account. Returns JWT tokens.",
+        operation_description="Creates a new user account. Returns JWT tokens and sets HTTP-only cookies.",
         request_body=RegisterSerializer,
         tags=["Authentication"],
     )
@@ -187,14 +190,18 @@ class RegisterView(generics.CreateAPIView):
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
 
-        return Response(
-            {
-                "user": UserSerializer(user).data,
-                "access": access_token,
-                "refresh": refresh_token,
-            },
-            status=201,
-        )
+        response_data = {
+            "user": UserSerializer(user).data,
+            "access": access_token,
+            "refresh": refresh_token,
+        }
+
+        response = Response(response_data, status=201)
+        cookie_max_age = 3600
+        response.set_cookie("access_token", access_token, httponly=True, max_age=cookie_max_age, samesite="None", secure=True)
+        response.set_cookie("refresh_token", refresh_token, httponly=True, max_age=7*24*3600, samesite="None", secure=True)
+
+        return response
 
 
 class LoginView(generics.GenericAPIView):
@@ -204,7 +211,7 @@ class LoginView(generics.GenericAPIView):
 
     @swagger_auto_schema(
         operation_summary="User login",
-        operation_description="Logs in a user and returns JWT tokens.",
+        operation_description="Logs in a user and returns JWT tokens. Sets HTTP-only cookies.",
         request_body=LoginSerializer,
         tags=["Authentication"],
     )
@@ -221,12 +228,8 @@ class LoginView(generics.GenericAPIView):
             return Response({"error": "Invalid credentials"}, status=400)
 
         now = timezone.now()
-
         if user.locked_until and user.locked_until > now:
-            return Response(
-                {"error": f"Account temporarily locked until {user.locked_until}"},
-                status=403,
-            )
+            return Response({"error": f"Account temporarily locked until {user.locked_until}"}, status=403)
 
         user_auth = authenticate(request, email=email, password=password)
         if not user_auth:
@@ -234,17 +237,8 @@ class LoginView(generics.GenericAPIView):
             if user.failed_logins >= MAX_FAILED_LOGINS:
                 user.locked_until = now + LOCKOUT_TIME
                 user.failed_logins = 0
-                user.save()
-                return Response(
-                    {"error": f"Account locked due to too many failed attempts. Try again at {user.locked_until}."},
-                    status=403,
-                )
             user.save()
-            attempts_left = MAX_FAILED_LOGINS - user.failed_logins
-            return Response(
-                {"error": "Invalid credentials", "failed_attempts": user.failed_logins, "attempts_left": attempts_left},
-                status=400,
-            )
+            return Response({"error": "Invalid credentials"}, status=400)
 
         user.failed_logins = 0
         user.locked_until = None
@@ -254,50 +248,73 @@ class LoginView(generics.GenericAPIView):
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
 
-        return Response(
-            {
-                "user": UserSerializer(user_auth).data,
-                "access": access_token,
-                "refresh": refresh_token,
-            },
-            status=200,
-        )
+        response_data = {
+            "user": UserSerializer(user_auth).data,
+            "access": access_token,
+            "refresh": refresh_token,
+        }
+
+        response = Response(response_data, status=200)
+        cookie_max_age = 3600
+        response.set_cookie("access_token", access_token, httponly=True, max_age=cookie_max_age, samesite="None", secure=True)
+        response.set_cookie("refresh_token", refresh_token, httponly=True, max_age=7*24*3600, samesite="None", secure=True)
+
+        return response
 
 
+@swagger_auto_schema(
+    method="post",
+    operation_summary="Logout",
+    operation_description="Logs out the user by invalidating the refresh token and deleting JWT cookies.",
+    responses={200: openapi.Schema(type=openapi.TYPE_OBJECT, properties={"detail": openapi.Schema(type=openapi.TYPE_STRING)})},
+    tags=["Authentication"],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    # No cookies, so just blacklist refresh token if sent in request
-    refresh_token = request.data.get("refresh")
+    refresh_token = request.COOKIES.get("refresh_token")
+
     if refresh_token:
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
         except Exception:
             pass
-    return Response({"detail": "Successfully logged out."}, status=200)
+
+    response = Response({"detail": "Successfully logged out."}, status=200)
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    return response
 
 
 @swagger_auto_schema(
     method="post",
     operation_summary="Refresh access token",
-    operation_description="Uses refresh token from request body to issue a new access token.",
+    operation_description="Uses refresh_token cookie to issue a new access token.",
     responses={200: openapi.Schema(type=openapi.TYPE_OBJECT, properties={"access": openapi.Schema(type=openapi.TYPE_STRING)})},
     tags=["Authentication"],
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def refresh_access_token(request):
-    refresh_token = request.data.get("refresh")
+    refresh_token = request.COOKIES.get("refresh_token")
     if not refresh_token:
-        return Response({"detail": "No refresh token provided"}, status=401)
+        return Response({"detail": "No refresh token"}, status=401)
+
     try:
         token = RefreshToken(refresh_token)
         access_token = str(token.access_token)
-        return Response({"access": access_token})
+        response_data = {"access": access_token}
+
+        response = Response(response_data, status=200)
+        response.set_cookie("access_token", access_token, httponly=True, max_age=3600, samesite="None", secure=True)
+        return response
+
     except TokenError:
         return Response({"detail": "Invalid refresh token"}, status=401)
 
+
+# -------------------- User Stats -------------------- #
 
 class UserStatsView(generics.RetrieveAPIView):
     serializer_class = UserStatsSerializer
@@ -334,8 +351,8 @@ class UserStatsUpdateView(APIView):
     def post(self, request):
         user_stats = request.user.userstats
         data = request.data
-
         winner = data.get("winner")
+
         if winner == "Player 1":
             user_stats.p1_wins += 1
             user_stats.p2_losses += 1
@@ -366,7 +383,7 @@ class UserStatsUpdateView(APIView):
 @swagger_auto_schema(
     method="delete",
     operation_summary="Delete own account",
-    operation_description="Allows a logged-in user to delete their own account.",
+    operation_description="Allows a logged-in user to delete their own account. Deletes JWT cookies.",
     responses={204: "No Content"},
     tags=["Users"],
 )
@@ -375,8 +392,13 @@ class UserStatsUpdateView(APIView):
 def delete_own_account(request):
     user = request.user
     user.delete()
-    return Response({"detail": "Your account has been deleted."}, status=status.HTTP_204_NO_CONTENT)
+    response = Response({"detail": "Your account has been deleted."}, status=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return response
 
+
+# -------------------- API Root -------------------- #
 
 @swagger_auto_schema(
     method="get",
@@ -387,17 +409,15 @@ def delete_own_account(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def api_root(request):
-    return Response(
-        {
-            "users": reverse("user-list", request=request),
-            "profile": reverse("profile", request=request),
-            "profile-edit": reverse("profile-edit", request=request),
-            "user-stats": reverse("user-stats", request=request),
-            "admin-check": reverse("admin-check", request=request),
-            "user-stats-reset": reverse("user-stats-reset", request=request),
-            "register": reverse("register", request=request),
-            "login": reverse("login", request=request),
-            "logout": reverse("logout", request=request),
-            "delete_account": reverse("delete-own-account", request=request),
-        }
-    )
+    return Response({
+        "users": reverse("user-list", request=request),
+        "profile": reverse("profile", request=request),
+        "profile-edit": reverse("profile-edit", request=request),
+        "user-stats": reverse("user-stats", request=request),
+        "admin-check": reverse("admin-check", request=request),
+        "user-stats-reset": reverse("user-stats-reset", request=request),
+        "register": reverse("register", request=request),
+        "login": reverse("login", request=request),
+        "logout": reverse("logout", request=request),
+        "delete_account": reverse("delete-own-account", request=request),
+    })
