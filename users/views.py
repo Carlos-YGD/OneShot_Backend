@@ -5,12 +5,15 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.reverse import reverse
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
-from .authentication import CookieJWTAuthentication
+from django.utils import timezone
+from datetime import timedelta
+from django.http import JsonResponse
 
 from .models import User
 from .serializers import (
@@ -21,16 +24,6 @@ from .serializers import (
     AdminUserSerializer,
     UserProfileUpdateSerializer,
 )
-from django.utils import timezone
-from datetime import timedelta
-from django.http import JsonResponse
-
-MAX_FAILED_LOGINS = 5
-LOCKOUT_TIME = timedelta(minutes=15)
-COOKIE_DOMAIN = ".dyvr49stm9di1.cloudfront.net"  # Your CloudFront domain
-COOKIE_PATH = "/"
-COOKIE_MAX_AGE_ACCESS = 3600  # 1 hour
-COOKIE_MAX_AGE_REFRESH = 7 * 24 * 3600  # 7 days
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_TIME = timedelta(minutes=15)
@@ -139,7 +132,7 @@ class AdminCheckView(APIView):
 class ProfileView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
-    authentication_classes = [CookieJWTAuthentication]
+    authentication_classes = [JWTAuthentication]
 
     def get_object(self):
         return self.request.user
@@ -181,7 +174,7 @@ class RegisterView(generics.CreateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Register a new user",
-        operation_description="Creates a new user account. Returns JWT tokens and sets HTTP-only cookies.",
+        operation_description="Creates a new user account. Returns JWT tokens.",
         request_body=RegisterSerializer,
         tags=["Authentication"],
     )
@@ -194,36 +187,14 @@ class RegisterView(generics.CreateAPIView):
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
 
-        response = Response(
+        return Response(
             {
                 "user": UserSerializer(user).data,
+                "access": access_token,
+                "refresh": refresh_token,
             },
             status=201,
         )
-
-        # Set cookies with proper domain/path for CloudFront
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,
-            samesite="None",
-            domain=COOKIE_DOMAIN,
-            path=COOKIE_PATH,
-            max_age=COOKIE_MAX_AGE_ACCESS,
-        )
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="None",
-            domain=COOKIE_DOMAIN,
-            path=COOKIE_PATH,
-            max_age=COOKIE_MAX_AGE_REFRESH,
-        )
-
-        return response
 
 
 class LoginView(generics.GenericAPIView):
@@ -233,7 +204,7 @@ class LoginView(generics.GenericAPIView):
 
     @swagger_auto_schema(
         operation_summary="User login",
-        operation_description="Logs in a user and returns JWT tokens. Sets HTTP-only cookies.",
+        operation_description="Logs in a user and returns JWT tokens.",
         request_body=LoginSerializer,
         tags=["Authentication"],
     )
@@ -283,90 +254,47 @@ class LoginView(generics.GenericAPIView):
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
 
-        response = Response(
+        return Response(
             {
                 "user": UserSerializer(user_auth).data,
+                "access": access_token,
+                "refresh": refresh_token,
             },
             status=200,
         )
-
-        # Set cookies with proper domain/path for CloudFront
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,
-            samesite="None",
-            domain=COOKIE_DOMAIN,
-            path=COOKIE_PATH,
-            max_age=COOKIE_MAX_AGE_ACCESS,
-        )
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="None",
-            domain=COOKIE_DOMAIN,
-            path=COOKIE_PATH,
-            max_age=COOKIE_MAX_AGE_REFRESH,
-        )
-
-        return response
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    refresh_token = request.COOKIES.get("refresh_token")
-
+    # No cookies, so just blacklist refresh token if sent in request
+    refresh_token = request.data.get("refresh")
     if refresh_token:
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
         except Exception:
             pass
-
-    response = Response({"detail": "Successfully logged out."}, status=200)
-
-    # Delete cookies with same domain/path
-    response.delete_cookie("access_token", domain=COOKIE_DOMAIN, path=COOKIE_PATH)
-    response.delete_cookie("refresh_token", domain=COOKIE_DOMAIN, path=COOKIE_PATH)
-
-    return response
+    return Response({"detail": "Successfully logged out."}, status=200)
 
 
 @swagger_auto_schema(
     method="post",
     operation_summary="Refresh access token",
-    operation_description="Uses refresh_token cookie to issue a new access token.",
+    operation_description="Uses refresh token from request body to issue a new access token.",
     responses={200: openapi.Schema(type=openapi.TYPE_OBJECT, properties={"access": openapi.Schema(type=openapi.TYPE_STRING)})},
     tags=["Authentication"],
 )
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def refresh_access_token(request):
-    refresh_token = request.COOKIES.get("refresh_token")
+    refresh_token = request.data.get("refresh")
     if not refresh_token:
-        return Response({"detail": "No refresh token"}, status=401)
-
+        return Response({"detail": "No refresh token provided"}, status=401)
     try:
         token = RefreshToken(refresh_token)
         access_token = str(token.access_token)
-
-        response = Response({"access": access_token})
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,
-            samesite="None",
-            domain=COOKIE_DOMAIN,
-            path=COOKIE_PATH,
-            max_age=COOKIE_MAX_AGE_ACCESS,
-        )
-        return response
-
+        return Response({"access": access_token})
     except TokenError:
         return Response({"detail": "Invalid refresh token"}, status=401)
 
@@ -407,10 +335,7 @@ class UserStatsUpdateView(APIView):
         user_stats = request.user.userstats
         data = request.data
 
-        # Expected keys: winner, p1Lives, p2Lives
         winner = data.get("winner")
-
-        # Update Versus stats
         if winner == "Player 1":
             user_stats.p1_wins += 1
             user_stats.p2_losses += 1
@@ -441,7 +366,7 @@ class UserStatsUpdateView(APIView):
 @swagger_auto_schema(
     method="delete",
     operation_summary="Delete own account",
-    operation_description="Allows a logged-in user to delete their own account. Deletes JWT cookies.",
+    operation_description="Allows a logged-in user to delete their own account.",
     responses={204: "No Content"},
     tags=["Users"],
 )
@@ -450,12 +375,7 @@ class UserStatsUpdateView(APIView):
 def delete_own_account(request):
     user = request.user
     user.delete()
-    response = Response(
-        {"detail": "Your account has been deleted."}, status=status.HTTP_204_NO_CONTENT
-    )
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
-    return response
+    return Response({"detail": "Your account has been deleted."}, status=status.HTTP_204_NO_CONTENT)
 
 
 @swagger_auto_schema(
