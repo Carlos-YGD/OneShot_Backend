@@ -26,6 +26,7 @@ ALLOWED_HOSTS = [
     ".cloudfront.net",
 ]
 
+APPEND_SLASH = False
 
 # ------------------------------------------------------------------------------
 # Application definition
