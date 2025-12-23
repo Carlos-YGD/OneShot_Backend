@@ -109,9 +109,9 @@ CSRF_TRUSTED_ORIGINS = [
 # Cookies required for cross-domain auth (Vercel → EB)
 SESSION_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SECURE = True
-
 CSRF_COOKIE_SAMESITE = "None"
 CSRF_COOKIE_SECURE = True
+CORS_ALLOW_CREDENTIALS = True
 
 # Local dev override
 if DEBUG:

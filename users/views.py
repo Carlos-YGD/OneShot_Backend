@@ -27,6 +27,13 @@ from django.http import JsonResponse
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_TIME = timedelta(minutes=15)
+COOKIE_DOMAIN = ".dyvr49stm9di1.cloudfront.net"  # Your CloudFront domain
+COOKIE_PATH = "/"
+COOKIE_MAX_AGE_ACCESS = 3600  # 1 hour
+COOKIE_MAX_AGE_REFRESH = 7 * 24 * 3600  # 7 days
+
+MAX_FAILED_LOGINS = 5
+LOCKOUT_TIME = timedelta(minutes=15)
 
 
 def health_check(request):
@@ -184,30 +191,36 @@ class RegisterView(generics.CreateAPIView):
         user = serializer.save()
 
         refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
 
         response = Response(
             {
                 "user": UserSerializer(user).data,
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
             },
             status=201,
         )
 
-        cookie_max_age = 3600
+        # Set cookies with proper domain/path for CloudFront
         response.set_cookie(
             key="access_token",
-            value=str(refresh.access_token),
+            value=access_token,
             httponly=True,
-            max_age=cookie_max_age,
-            samesite="Lax",
+            secure=True,
+            samesite="None",
+            domain=COOKIE_DOMAIN,
+            path=COOKIE_PATH,
+            max_age=COOKIE_MAX_AGE_ACCESS,
         )
         response.set_cookie(
             key="refresh_token",
-            value=str(refresh),
+            value=refresh_token,
             httponly=True,
-            max_age=7 * 24 * 3600,
-            samesite="Lax",
+            secure=True,
+            samesite="None",
+            domain=COOKIE_DOMAIN,
+            path=COOKIE_PATH,
+            max_age=COOKIE_MAX_AGE_REFRESH,
         )
 
         return response
@@ -277,41 +290,31 @@ class LoginView(generics.GenericAPIView):
             status=200,
         )
 
-        cookie_max_age = 3600
+        # Set cookies with proper domain/path for CloudFront
         response.set_cookie(
             key="access_token",
             value=access_token,
             httponly=True,
-            max_age=cookie_max_age,
-            samesite="None",
             secure=True,
+            samesite="None",
+            domain=COOKIE_DOMAIN,
+            path=COOKIE_PATH,
+            max_age=COOKIE_MAX_AGE_ACCESS,
         )
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            max_age=7 * 24 * 3600,
-            samesite="None",
             secure=True,
+            samesite="None",
+            domain=COOKIE_DOMAIN,
+            path=COOKIE_PATH,
+            max_age=COOKIE_MAX_AGE_REFRESH,
         )
 
-        print(request.COOKIES)
-        print(response.cookies)
         return response
 
 
-@swagger_auto_schema(
-    method="post",
-    operation_summary="Logout",
-    operation_description="Logs out the user by invalidating the refresh token and deleting JWT cookies.",
-    responses={
-        200: openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={"detail": openapi.Schema(type=openapi.TYPE_STRING)},
-        )
-    },
-    tags=["Authentication"],
-)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
@@ -326,10 +329,46 @@ def logout_view(request):
 
     response = Response({"detail": "Successfully logged out."}, status=200)
 
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/")
+    # Delete cookies with same domain/path
+    response.delete_cookie("access_token", domain=COOKIE_DOMAIN, path=COOKIE_PATH)
+    response.delete_cookie("refresh_token", domain=COOKIE_DOMAIN, path=COOKIE_PATH)
 
     return response
+
+
+@swagger_auto_schema(
+    method="post",
+    operation_summary="Refresh access token",
+    operation_description="Uses refresh_token cookie to issue a new access token.",
+    responses={200: openapi.Schema(type=openapi.TYPE_OBJECT, properties={"access": openapi.Schema(type=openapi.TYPE_STRING)})},
+    tags=["Authentication"],
+)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def refresh_access_token(request):
+    refresh_token = request.COOKIES.get("refresh_token")
+    if not refresh_token:
+        return Response({"detail": "No refresh token"}, status=401)
+
+    try:
+        token = RefreshToken(refresh_token)
+        access_token = str(token.access_token)
+
+        response = Response({"access": access_token})
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,
+            samesite="None",
+            domain=COOKIE_DOMAIN,
+            path=COOKIE_PATH,
+            max_age=COOKIE_MAX_AGE_ACCESS,
+        )
+        return response
+
+    except TokenError:
+        return Response({"detail": "Invalid refresh token"}, status=401)
 
 
 class UserStatsView(generics.RetrieveAPIView):
@@ -442,35 +481,3 @@ def api_root(request):
             "delete_account": reverse("delete-own-account", request=request),
         }
     )
-
-
-@swagger_auto_schema(
-    method="post",
-    operation_summary="Refresh access token",
-    operation_description="Uses refresh_token cookie to issue a new access token.",
-    responses={200: openapi.Schema(type=openapi.TYPE_OBJECT, properties={"access": openapi.Schema(type=openapi.TYPE_STRING)})},
-    tags=["Authentication"],
-)
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def refresh_access_token(request):
-    refresh_token = request.COOKIES.get("refresh_token")
-    if not refresh_token:
-        return Response({"detail": "No refresh token"}, status=401)
-
-    try:
-        token = RefreshToken(refresh_token)
-        access_token = str(token.access_token)
-
-        response = Response({"access": access_token})
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            max_age=3600,
-            samesite="Lax",
-        )
-        return response
-
-    except TokenError:
-        return Response({"detail": "Invalid refresh token"}, status=401)
