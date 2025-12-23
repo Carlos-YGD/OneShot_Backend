@@ -11,6 +11,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
 from .authentication import CookieJWTAuthentication
+from django.shortcuts import get_object_or_404
 
 from .models import User
 from .serializers import (
@@ -27,6 +28,7 @@ from django.http import JsonResponse
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_TIME = timedelta(minutes=15)
+
 
 def health_check(request):
     return JsonResponse({"status": "ok"})
@@ -66,7 +68,9 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
         return [IsAuthenticated()]
 
     def get_object(self):
-        return super().get_object() if self.request.user.is_admin else self.request.user
+        if self.request.user.is_admin:
+            return get_object_or_404(User, pk=self.kwargs["pk"])
+        return self.request.user
 
     @swagger_auto_schema(
         operation_summary="Partial update a user",
