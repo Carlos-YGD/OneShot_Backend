@@ -26,7 +26,6 @@ ALLOWED_HOSTS = [
     ".cloudfront.net",
 ]
 
-APPEND_SLASH = False
 
 # ------------------------------------------------------------------------------
 # Application definition
@@ -105,6 +104,7 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     "https://one-shot-frontend.vercel.app",
     "https://one-shot-frontend-carlos-ygds-projects.vercel.app",
+    "https://dyvr49stm9di1.cloudfront.net",
 ]
 
 # Cookies required for cross-domain auth (Vercel → EB)
@@ -113,6 +113,8 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = "None"
 CSRF_COOKIE_SECURE = True
 CORS_ALLOW_CREDENTIALS = True
+SESSION_COOKIE_DOMAIN = ".cloudfront.net"
+CSRF_COOKIE_DOMAIN = ".cloudfront.net"
 
 # Local dev override
 if DEBUG:
